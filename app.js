@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.set('trust proxy', 1);
 const crawlers = require('crawler-user-agents');
 
 // Configuration
@@ -583,7 +584,7 @@ function generateTlsFingerprint(req) {
 // API Endpoints
 app.get('/api/blocker', validateApiKey, async (req, res) => {
   try {
-    const ip = req.query.ip || req.headers['x-forwarded-for'] || req.ip;
+    const ip = req.query.ip || req.ip;
     const hostname = req.query.hostname || req.headers['host'] || '';
     const userAgent = req.query.ua || req.headers['user-agent'] || '';
     
