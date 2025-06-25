@@ -56,6 +56,11 @@ const MALICIOUS_IP_URL = 'https://raw.githubusercontent.com/stamparm/ipsum/maste
 const HOSTNAME_BLACKLIST_URL = 'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts';
 const THREAT_URLS_URL = 'https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-links-NEW-today.txt';
 
+const WHITELISTED_IPS = new Set([
+  'IP_SERVER_ANDA', // Ganti dengan IP server Anda
+  ...(process.env.WHITELISTED_IPS?.split(',') || [])
+]);
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -165,6 +170,10 @@ function validateApiKey(req, res, next) {
 
 // Add this function near the other detection functions
 async function detectDataCenter(ip) {
+  const WHITELISTED_IPS = [' 18.143.132.155', ''];
+  if (WHITELISTED_IPS.includes(ip)) {
+    return { is_datacenter: false, details: null };
+  }
   if (!ip) return { is_datacenter: false, details: null };
 
   try {
