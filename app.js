@@ -234,7 +234,13 @@ async function detectVpnOrTor(ip) {
         asn: data?.connection?.asn,
         country: data?.country,
         country_code: data?.country_code,
-        flag: data?.flag
+        flag: data?.flag,
+        latitude: data?.latitude,
+        longitude: data?.longitude,
+        city: data?.city,
+        region: data?.region,
+        continent: data?.continent,
+        timezone: data?.timezone?.name
       }
     };
   } catch (error) {
@@ -667,7 +673,13 @@ app.get('/api/blocker', validateApiKey, async (req, res) => {
         type: dataCenterInfo.details?.type,
         country: vpnTorInfo.details?.country,
         country_code: vpnTorInfo.details?.country_code,
-        flag: vpnTorInfo.details?.flag
+        flag: vpnTorInfo.details?.flag,
+        latitude: vpnTorInfo.details?.latitude,
+        longitude: vpnTorInfo.details?.longitude,
+        city: vpnTorInfo.details?.city,
+        region: vpnTorInfo.details?.region,
+        continent: vpnTorInfo.details?.continent,
+        timezone: vpnTorInfo.details?.timezone
       },
       fingerprinting: {
         tls: finalBotDetection.details.tlsFingerprint,
@@ -714,7 +726,13 @@ app.get('/api/ip-info', validateApiKey, async (req, res) => {
         ...vpnTorInfo.details,
         country: vpnTorInfo.details?.country,
         country_code: vpnTorInfo.details?.country_code,
-        flag: vpnTorInfo.details?.flag
+        flag: vpnTorInfo.details?.flag,
+        latitude: vpnTorInfo.details?.latitude,
+        longitude: vpnTorInfo.details?.longitude,
+        city: vpnTorInfo.details?.city,
+        region: vpnTorInfo.details?.region,
+        continent: vpnTorInfo.details?.continent,
+        timezone: vpnTorInfo.details?.timezone
       },
       timestamp: new Date().toISOString()
     });
