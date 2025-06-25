@@ -231,7 +231,10 @@ async function detectVpnOrTor(ip) {
       details: {
         isp: data?.connection?.isp,
         org: data?.connection?.org,
-        asn: data?.connection?.asn
+        asn: data?.connection?.asn,
+        country: data?.country,
+        country_code: data?.country_code,
+        flag: data?.flag
       }
     };
   } catch (error) {
@@ -661,7 +664,10 @@ app.get('/api/blocker', validateApiKey, async (req, res) => {
         isp: vpnTorInfo.details?.isp || dataCenterInfo.details?.isp,
         org: vpnTorInfo.details?.org || dataCenterInfo.details?.org,
         asn: vpnTorInfo.details?.asn || dataCenterInfo.details?.asn,
-        type: dataCenterInfo.details?.type
+        type: dataCenterInfo.details?.type,
+        country: vpnTorInfo.details?.country,
+        country_code: vpnTorInfo.details?.country_code,
+        flag: vpnTorInfo.details?.flag
       },
       fingerprinting: {
         tls: finalBotDetection.details.tlsFingerprint,
@@ -704,7 +710,12 @@ app.get('/api/ip-info', validateApiKey, async (req, res) => {
       is_tor: vpnTorInfo.is_tor,
       is_proxy: vpnTorInfo.is_proxy,
       detection_method: vpnTorInfo.method,
-      details: vpnTorInfo.details,
+      details: {
+        ...vpnTorInfo.details,
+        country: vpnTorInfo.details?.country,
+        country_code: vpnTorInfo.details?.country_code,
+        flag: vpnTorInfo.details?.flag
+      },
       timestamp: new Date().toISOString()
     });
   } catch (error) {
