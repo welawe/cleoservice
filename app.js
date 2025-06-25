@@ -1000,35 +1000,53 @@ app.get('/:shortCode', async (req, res) => {
     const { shortCode } = req.params;
     const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'] || '';
+    const host = req.headers['host'] || '';
 
-    // Periksa bot
-    const botDetection = isRequestFromBot(req);
-    if (botDetection.isBot) {
-      return res.status(403).json({
+    // 1. Cek apakah shortlink ada dan aktif
+    const shortlink = shortlinksDB[shortCode];
+    if (!shortlink || !shortlink.is_active) {
+      return res.status(404).json({ 
         error: 'Forbidden',
-        message: 'Bot access not allowed to shortlinks',
-        detection_details: botDetection
+        message: 'NOT FOUND'
       });
     }
 
-    // Dapatkan shortlink
-    const shortlink = shortlinksDB[shortCode];
-    
-    if (!shortlink || !shortlink.is_active) {
-      return res.status(404).json({ error: 'Shortlink not found or inactive' });
+    // 2. Deteksi bot (menggunakan sistem yang sudah ada)
+    const botDetection = isRequestFromBot(req);
+    if (botDetection.isBlock) {
+      console.log(`Blocked bot access to ${shortCode} from IP ${ip}`);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'NOT FOUND',
+        
+      });
     }
 
-    // Update statistik
+    // 3. Deteksi ancaman (VPN/TOR/malicious IP dll)
+    const threatInfo = await enhancedDetection(ip, host);
+    if (threatInfo.threats_detected) {
+      console.log(`Blocked threat access to ${shortCode} from IP ${ip}`);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'NOT FOUND',
+        
+      });
+    }
+
+    // 4. Update statistik akses
     shortlink.click_count = (shortlink.click_count || 0) + 1;
     shortlink.last_accessed = new Date().toISOString();
     saveShortlinks();
 
-    // Redirect
+    // 5. Redirect ke URL asli
     res.redirect(shortlink.original_url);
 
   } catch (error) {
-    console.error('Error redirecting shortlink:', error);
-    res.status(500).json({ error: 'Internal Server Error', message: error.message });
+    console.error(`Error accessing shortlink ${req.params.shortCode}:`, error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message
+    });
   }
 });
 
