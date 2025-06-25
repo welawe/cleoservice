@@ -8,6 +8,43 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 const crawlers = require('crawler-user-agents');
+// Tambahkan di bagian atas file
+const fs = require('fs');
+const path = require('path');
+
+// Konfigurasi penyimpanan
+const SHORTLINK_DB_PATH = path.join(__dirname, 'shortlinks.json');
+
+// Inisialisasi database JSON
+let shortlinksDB = {};
+
+// Fungsi untuk memuat data dari file
+function loadShortlinks() {
+  try {
+    if (fs.existsSync(SHORTLINK_DB_PATH)) {
+      const data = fs.readFileSync(SHORTLINK_DB_PATH, 'utf8');
+      shortlinksDB = JSON.parse(data);
+    } else {
+      shortlinksDB = {};
+      saveShortlinks();
+    }
+  } catch (error) {
+    console.error('Error loading shortlinks:', error);
+    shortlinksDB = {};
+  }
+}
+
+// Fungsi untuk menyimpan data ke file
+function saveShortlinks() {
+  try {
+    fs.writeFileSync(SHORTLINK_DB_PATH, JSON.stringify(shortlinksDB, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Error saving shortlinks:', error);
+  }
+}
+
+// Muat data saat startup
+loadShortlinks();
 
 // Configuration
 
@@ -869,6 +906,219 @@ app.get('/api/health', (req, res) => {
       message: error.message,
       timestamp: new Date().toISOString()
     });
+  }
+});
+
+// Endpoint untuk membuat shortlink
+app.post('/api/shorten', validateApiKey, async (req, res) => {
+  try {
+    const { url, custom_code } = req.body;
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+
+    // Validasi URL
+    if (!url || !isValidUrl(url)) {
+      return res.status(400).json({ error: 'Invalid URL' });
+    }
+
+    // Periksa ancaman
+    const hostname = new URL(url).hostname;
+    const threatInfo = await enhancedDetection(ip, hostname);
+    
+    if (threatInfo.threats_detected) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Cannot shorten this URL - threat detected',
+        details: threatInfo
+      });
+    }
+
+    // Generate atau gunakan custom code
+    let shortCode = custom_code || generateShortCode(6);
+    
+    // Pastikan short code unik
+    if (shortlinksDB[shortCode]) {
+      return res.status(400).json({ error: 'Short code already exists' });
+    }
+
+    // Buat entri baru
+    const newShortlink = {
+      original_url: url,
+      created_at: new Date().toISOString(),
+      creator_ip: ip,
+      is_active: true,
+      click_count: 0,
+      last_accessed: null
+    };
+
+    // Simpan ke database
+    shortlinksDB[shortCode] = newShortlink;
+    saveShortlinks();
+
+    res.json({
+      success: true,
+      short_url: `https://${req.headers.host}/${shortCode}`,
+      original_url: url,
+      short_code: shortCode
+    });
+
+  } catch (error) {
+    console.error('Error creating shortlink:', error);
+    res.status(500).json({ error: 'Internal Server Error', message: error.message });
+  }
+});
+
+// Helper functions
+function isValidUrl(url) {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function generateShortCode(length) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// Endpoint untuk redirect shortlink
+app.get('/:shortCode', async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'] || '';
+
+    // Periksa bot
+    const botDetection = isRequestFromBot(req);
+    if (botDetection.isBot) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Bot access not allowed to shortlinks',
+        detection_details: botDetection
+      });
+    }
+
+    // Dapatkan shortlink
+    const shortlink = shortlinksDB[shortCode];
+    
+    if (!shortlink || !shortlink.is_active) {
+      return res.status(404).json({ error: 'Shortlink not found or inactive' });
+    }
+
+    // Update statistik
+    shortlink.click_count = (shortlink.click_count || 0) + 1;
+    shortlink.last_accessed = new Date().toISOString();
+    saveShortlinks();
+
+    // Redirect
+    res.redirect(shortlink.original_url);
+
+  } catch (error) {
+    console.error('Error redirecting shortlink:', error);
+    res.status(500).json({ error: 'Internal Server Error', message: error.message });
+  }
+});
+
+// Endpoint untuk menonaktifkan shortlink
+app.delete('/api/shortlink/:shortCode', validateApiKey, async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+
+    if (!shortlinksDB[shortCode]) {
+      return res.status(404).json({ error: 'Shortlink not found' });
+    }
+
+    // Nonaktifkan shortlink
+    shortlinksDB[shortCode].is_active = false;
+    saveShortlinks();
+
+    res.json({
+      success: true,
+      message: 'Shortlink deactivated',
+      short_code: shortCode
+    });
+
+  } catch (error) {
+    console.error('Error deactivating shortlink:', error);
+    res.status(500).json({ error: 'Internal Server Error', message: error.message });
+  }
+});
+
+// Endpoint untuk mengaktifkan kembali shortlink
+app.post('/api/shortlink/:shortCode/activate', validateApiKey, async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+
+    if (!shortlinksDB[shortCode]) {
+      return res.status(404).json({ error: 'Shortlink not found' });
+    }
+
+    // Aktifkan kembali
+    shortlinksDB[shortCode].is_active = true;
+    saveShortlinks();
+
+    res.json({
+      success: true,
+      message: 'Shortlink activated',
+      short_code: shortCode
+    });
+
+  } catch (error) {
+    console.error('Error activating shortlink:', error);
+    res.status(500).json({ error: 'Internal Server Error', message: error.message });
+  }
+});
+
+// Endpoint untuk mendapatkan info shortlink
+app.get('/api/shortlink/:shortCode', validateApiKey, async (req, res) => {
+  try {
+    const { shortCode } = req.params;
+
+    const shortlink = shortlinksDB[shortCode];
+    
+    if (!shortlink) {
+      return res.status(404).json({ error: 'Shortlink not found' });
+    }
+
+    res.json({
+      short_code: shortCode,
+      original_url: shortlink.original_url,
+      created_at: shortlink.created_at,
+      is_active: shortlink.is_active,
+      click_count: shortlink.click_count,
+      last_accessed: shortlink.last_accessed,
+      short_url: `https://${req.headers.host}/${shortCode}`
+    });
+
+  } catch (error) {
+    console.error('Error getting shortlink info:', error);
+    res.status(500).json({ error: 'Internal Server Error', message: error.message });
+  }
+});
+
+// Endpoint untuk mendapatkan semua shortlink
+app.get('/api/shortlinks', validateApiKey, async (req, res) => {
+  try {
+    const result = Object.keys(shortlinksDB).map(shortCode => ({
+      short_code: shortCode,
+      original_url: shortlinksDB[shortCode].original_url,
+      created_at: shortlinksDB[shortCode].created_at,
+      is_active: shortlinksDB[shortCode].is_active,
+      click_count: shortlinksDB[shortCode].click_count,
+      last_accessed: shortlinksDB[shortCode].last_accessed,
+      short_url: `https://${req.headers.host}/${shortCode}`
+    }));
+
+    res.json(result);
+
+  } catch (error) {
+    console.error('Error getting shortlinks:', error);
+    res.status(500).json({ error: 'Internal Server Error', message: error.message });
   }
 });
 
