@@ -14,7 +14,11 @@ const path = require('path');
 
 // Konfigurasi penyimpanan
 const SHORTLINK_DB_PATH = path.join(__dirname, 'shortlinks.json');
-
+const KNOWN_VPN_ASNS = new Set(['AS199524', 'AS60068', 'AS14061']); // Contoh ASN VPN
+const KNOWN_VPN_ISPS = new Set([
+  'g core labs', 'm247', 'cyberghost', 'expressvpn', 'nordvpn', 
+  'surfshark', 'private internet access', 'pia', 'protonvpn'
+]);
 // Inisialisasi database JSON
 let shortlinksDB = {};
 
