@@ -257,7 +257,6 @@ async function enhancedDetection(ip, hostname) {
 async function detectVpnOrTor(ip) {
   if (!ip) return { is_vpn: false, is_tor: false, is_proxy: false };
 
-  const isVpn = isVPN(data?.connection?.org, data?.connection?.isp, data?.connection?.asn);
   // Check local blocklists first
   const isTor = torExitNodes.has(ip);
   const isVpn = Array.from(vpnIpRanges).some(range => {
