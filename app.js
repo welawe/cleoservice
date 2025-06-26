@@ -55,7 +55,29 @@ const KNOWN_VPN_IPS_URL = 'https://raw.githubusercontent.com/X4BNet/lists_vpn/ma
 const MALICIOUS_IP_URL = 'https://raw.githubusercontent.com/stamparm/ipsum/master/ipsum.txt';
 const HOSTNAME_BLACKLIST_URL = 'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts';
 const THREAT_URLS_URL = 'https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-links-NEW-today.txt';
+const KNOWN_VPN_ISPS = [
+  'g-core', 'gcore', 'luminati', 'bright data', 'hola', 'expressvpn',
+  'nordvpn', 'cyberghost', 'private internet access', 'protonvpn',
+  'hide.me', 'windscribe', 'surfshark', 'ipvanish', 'vyprvpn', 'tunnelbear',
+  'hotspot shield', 'purevpn', 'zenmate', 'strongvpn', 'hidemyass',
+  'mullvad', 'perfect privacy', 'airvpn', 'ivpn', 'trust.zone'
+];
 
+const KNOWN_VPN_ASNS = new Set([
+  199524, // G-Core Labs
+  59930,  // ExpressVPN
+  51852,  // Private Internet Access
+  49689,  // NordVPN
+  59795,  // CyberGhost
+  40034,  // ProtonVPN
+  41772,  // HideMyAss
+  393560, // Surfshark
+  43350,  // Mullvad
+  47583,  // Windscribe
+  55293,  // VyprVPN
+  57729,  // IPVanish
+  60068   // TunnelBear
+]);
 const WHITELISTED_IPS = new Set([
   'IP_SERVER_ANDA', // Ganti dengan IP server Anda
   ...(process.env.WHITELISTED_IPS?.split(',') || [])
@@ -179,10 +201,13 @@ async function detectDataCenter(ip) {
   
 
 function isVPN(org, isp, asn) {
-  const orgLower = org?.toLowerCase() || '';
-  const ispLower = isp?.toLowerCase() || '';
+  if (!org && !isp && !asn) return false;
+  
+  const orgLower = (org || '').toLowerCase();
+  const ispLower = (isp || '').toLowerCase();
+  
   return (
-    KNOWN_VPN_ASNS.has(asn) ||
+    (asn && KNOWN_VPN_ASNS.has(asn)) ||
     KNOWN_VPN_ISPS.some(vpn => orgLower.includes(vpn)) ||
     KNOWN_VPN_ISPS.some(vpn => ispLower.includes(vpn))
   );
@@ -257,33 +282,34 @@ async function enhancedDetection(ip, hostname) {
 async function detectVpnOrTor(ip) {
   if (!ip) return { is_vpn: false, is_tor: false, is_proxy: false };
 
-  // Check local blocklists first
+  // 1. Check local blocklists first (fastest)
   const isTor = torExitNodes.has(ip);
-  const isVpn = Array.from(vpnIpRanges).some(range => {
-    if (range.includes('/')) {
-      return isIpInRange(ip, range);
-    }
-    return ip === range;
+  const isVpnFromRange = Array.from(vpnIpRanges).some(range => {
+    return range.includes('/') ? isIpInRange(ip, range) : ip === range;
   });
-  
-  if (isTor || isVpn) {
+
+  if (isTor || isVpnFromRange) {
     return {
-      is_vpn: isVpn,
+      is_vpn: isVpnFromRange,
       is_tor: isTor,
-      is_proxy: isVpn || isTor,
+      is_proxy: isVpnFromRange || isTor,
       method: 'local_blocklist'
     };
   }
-  
-  // Fallback to ipwho.is
+
+  // 2. Check with external API (more thorough but slower)
   try {
     const response = await fetch(`${IPWHOIS_API}${ip}`);
     const data = await response.json();
     
+    // Enhanced VPN detection
+    const isVpnFromApi = data?.connection?.vpn || 
+                       isVPN(data?.connection?.org, data?.connection?.isp, data?.connection?.asn);
+
     return {
-      is_vpn: data?.connection?.vpn || false,
+      is_vpn: isVpnFromApi,
       is_tor: data?.connection?.tor || false,
-      is_proxy: data?.connection?.proxy || false,
+      is_proxy: data?.connection?.proxy || isVpnFromApi,
       method: 'ipwhois_api',
       details: {
         isp: data?.connection?.isp,
@@ -291,9 +317,7 @@ async function detectVpnOrTor(ip) {
         asn: data?.connection?.asn,
         country: data?.country,
         country_code: data?.country_code,
-        flag: data?.flag,
-        latitude: data?.latitude,
-        longitude: data?.longitude,
+        flag: data?.flag?.emoji,
         city: data?.city,
         region: data?.region,
         continent: data?.continent,
