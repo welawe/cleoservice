@@ -171,11 +171,26 @@ function validateApiKey(req, res, next) {
 // Add this function near the other detection functions
 async function detectDataCenter(ip) {
   const WHITELISTED_IPS = [' 18.143.132.155', ''];
+  
   if (WHITELISTED_IPS.includes(ip)) {
     return { is_datacenter: false, details: null };
   }
   if (!ip) return { is_datacenter: false, details: null };
+  const KNOWN_VPN_ASNS = new Set(['AS199524', 'AS60068', 'AS14061']); // Contoh ASN VPN
+  const KNOWN_VPN_ISPS = new Set([
+  'g core labs', 'm247', 'cyberghost', 'expressvpn', 'nordvpn', 
+  'surfshark', 'private internet access', 'pia', 'protonvpn'
+]);
 
+function isVPN(org, isp, asn) {
+  const orgLower = org?.toLowerCase() || '';
+  const ispLower = isp?.toLowerCase() || '';
+  return (
+    KNOWN_VPN_ASNS.has(asn) ||
+    KNOWN_VPN_ISPS.some(vpn => orgLower.includes(vpn)) ||
+    KNOWN_VPN_ISPS.some(vpn => ispLower.includes(vpn))
+  );
+}
   try {
     const response = await fetch(`${IPWHOIS_API}${ip}`);
     const data = await response.json();
@@ -245,7 +260,8 @@ async function enhancedDetection(ip, hostname) {
 // VPN/TOR detection
 async function detectVpnOrTor(ip) {
   if (!ip) return { is_vpn: false, is_tor: false, is_proxy: false };
-  
+
+  const isVpn = isVPN(data?.connection?.org, data?.connection?.isp, data?.connection?.asn);
   // Check local blocklists first
   const isTor = torExitNodes.has(ip);
   const isVpn = Array.from(vpnIpRanges).some(range => {
